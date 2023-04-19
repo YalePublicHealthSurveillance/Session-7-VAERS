@@ -1,7 +1,7 @@
 ---
 title: "vaers and covid"
 author: "Dan Weinberger"
-date: "3/1/2022"
+date: "4/19/2023"
 output: html_document
 ---
 
@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(lubridate)
 library(data.table)
+library(dplyr)
 ```
 
 #We will read in the data from VAERS For Jan-July 2021 (accessd August 2, 2021)
@@ -46,19 +47,15 @@ a1$SYMPTOM_TEXT[1:10]
 
 Take the first entry for each VAERS_ID
 
-Sort the data by ID
+Sort the data by ID, remove duplicates
 ```{r}
-a1 <- a1[order(a1$VAERS_ID),]
-```
+a2 <- a1 %>%
+  arrange(VAERS_ID, RECVDATE) %>%
+  group_by(VAERS_ID) %>%
+  mutate(rep = row_number()) %>%
+  filter(rep==1) %>%
+  ungroup()
 
-Convert to a 'data.table' format, which is computationally much faster in R
-```{r}
-a2 <- data.table(a1, key = "VAERS_ID")
-```
-
-Keep just the first observation using head(1)
-```{r}
-a2 <- a2[, head(.SD, 1), by = key(a2)]
 ```
 
 Check number of rows in original and new dataset
@@ -75,35 +72,34 @@ nrow(a2)
 the grep() function searches text strings.
 toupper makes all of the letters CAPITAL to avoid issues with upper/lower case when matching
 ```{r}
-a2$mycocarditis<-0  #initializae the variable called "rash"
 
-a2$mycocarditis[
-  grep('MYOCARDITIS',   #word you want to match
-       toupper(a2$SYMPTOM_TEXT)) #search the symptom text for the keyword
-      ]   <-1   #flag it as 1
+a2 <- a2 %>%
+  mutate( mycocarditis = if_else(grepl('MYOCARDITIS',   #word you want to match
+       toupper(SYMPTOM_TEXT)) , 1, 0 ),
+       
+       pericarditis = if_else(grepl('PERICARDITIS',   #word you want to match
+       toupper(SYMPTOM_TEXT)) , 1, 0 )
+  )
 
-a2$pericardiditis <- 0
-
-a2$pericardiditis[
-  grep('PERICARDITIS',   #word you want to match
-       toupper(a2$SYMPTOM_TEXT)) #search the symptom text for the keyword
-      ]   <-1   #flag it as 1
 ```
 
 How many people have 'pericarditis' or 'myocarditis' listed in the free text?
 
 ```{r}
-table(a2$mycocarditis, a2$pericardiditis)
+a2 %>%
+  summarize(mycocarditis=sum(mycocarditis), 
+            pericarditis=sum(pericarditis))
 
 ```
 
 View the records for people with this flag
 
 ```{r}
-View(a2[a2$mycocarditis==1 | a2$pericardiditis==1,])
+View(a2[a2$mycocarditis==1 | a2$pericarditis==1,])
 
 
-a3 <- a2[a2$mycocarditis==1 | a2$pericardiditis==1,]
+a3 <- a2 %>%
+  filter(mycocarditis==1 | pericarditis==1) 
 ```
 
 
@@ -123,5 +119,4 @@ hist(a3$AGE_YRS, xlim=c(0,120), main='Myocarditis/pericarditis age')
 ```{r}
 hist(a3$NUMDAYS[!is.na(a3$NUMDAYS) & a3$NUMDAYS<60], xlim=c(0,60), breaks=10, main='Time of symptom onset')
 ```
-
 
